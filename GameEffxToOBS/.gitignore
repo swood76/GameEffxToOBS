@@ -1,0 +1,15 @@
+# Generated diagnostics and recordings
+**/gameeffx_v36_4_logs/
+**/*_logs/
+**/state_*.csv
+**/overlay_*.jsonl
+*.mp4
+*.mkv
+# Python / local tooling
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.env
+.vscode/
+.idea/

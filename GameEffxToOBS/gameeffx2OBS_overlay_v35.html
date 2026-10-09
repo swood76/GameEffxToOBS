@@ -1,0 +1,138 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>GameEffx V36.14 — Heartbeat + Safer Dissolve</title>
+<style>
+html,body{margin:0;width:100%;height:100%;overflow:hidden;background:transparent}
+.layer{position:absolute;inset:0;pointer-events:none;opacity:0;will-change:opacity,transform}
+#tunnel{background:radial-gradient(ellipse 58% 67% at center,transparent 17%,rgba(15,0,0,.12) 36%,rgba(15,0,0,.65) 65%,rgba(0,0,0,.99) 100%)}
+#beat{background:radial-gradient(ellipse 65% 73% at center,transparent 24%,rgba(145,0,0,.18) 45%,rgba(210,0,0,.76) 77%,rgba(115,0,0,.95) 100%)}
+#blood{background:radial-gradient(ellipse 68% 76% at center,transparent 24%,rgba(95,0,0,.08) 48%,rgba(155,0,0,.45) 100%)}
+#hit{background:radial-gradient(ellipse 75% 85% at center,rgba(140,0,0,.10) 0%,rgba(170,0,0,.30) 70%,rgba(85,0,0,.40) 100%);z-index:5}
+
+#dissolve{background:rgb(0,0,0);z-index:2147483647;position:fixed;inset:0;transform:translateZ(0)}
+#ring{border:0;box-sizing:border-box;background:radial-gradient(ellipse 65% 72% at center,transparent 30%,rgba(0,0,0,.18) 52%,rgba(0,0,0,.96) 100%)}
+#debug{display:none;position:fixed;top:12px;left:12px;z-index:2147483647;color:white;background:#222;padding:12px;font:20px monospace}body:has(#debug.show) #debug{display:block}</style></head><body>
+<div id="debug"></div><div id="dissolve" class="layer"></div><div id="hit" class="layer"></div><div id="tunnel" class="layer"></div><div id="ring" class="layer"></div><div id="blood" class="layer"></div><div id="beat" class="layer"></div>
+<script>
+'use strict';
+const hit=document.getElementById('hit');
+const dissolve=document.getElementById('dissolve');
+const tunnel=document.getElementById('tunnel'),ring=document.getElementById('ring'),blood=document.getElementById('blood'),beat=document.getElementById('beat');
+let target={active:false,intensity:0,critical:0,glitch_until:0,fatal_remaining:0}, fade=0,critical=0,phase=0,last=performance.now();
+// Test only in a separate browser tab: http://127.0.0.1:8765/?test=dissolve
+const testMode=new URLSearchParams(location.search).get('test')==='dissolve';
+const testStarted=performance.now();
+const debugMode=new URLSearchParams(location.search).has('debug');
+const debug=document.getElementById('debug');
+let lastDebug=0;
+// Death dissolve is now controlled exclusively by the server's opacity value.
+// No browser-local death animation clock is used.
+let seenDeathEvent=null;
+let lastStateReceived=0;
+let pollInFlight=false;
+let diagLastSent=0,diagLastOpacity=0,diagLastEvent=null;
+function sendOverlayDiag(now,opacity,t,dying){
+  const changed=diagLastEvent!==seenDeathEvent || Math.abs(opacity-diagLastOpacity)>=.08;
+  const period=(opacity>.02 || dying)?250:1000;
+  if(!changed && now-diagLastSent<period)return;
+  diagLastSent=now;diagLastOpacity=opacity;diagLastEvent=seenDeathEvent;
+  const report={browser_time:new Date().toISOString(),event_id:seenDeathEvent,
+    local_seconds:Number(t.toFixed(3)),black_opacity:Number(opacity.toFixed(4)),
+    dying,active:!!target.active,intensity:Number(target.intensity||0),
+    critical:Number(target.critical||0),fade:Number(fade.toFixed(3)),
+    pulse:Number(pulseValue.toFixed(3)),
+    dissolve_remaining:Number(target.dissolve_remaining||0),
+    dissolve_elapsed:Number(target.dissolve_elapsed||0),
+    dissolve_release_elapsed:Number(target.dissolve_release_elapsed||0),
+    last_state_age_ms:Math.round(now-lastStateReceived)};
+  fetch('/overlay_diag',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify(report),cache:'no-store'}).catch(()=>{});
+}
+let pulseValue=0;
+
+
+if(debugMode)debug.classList.add('show');
+async function poll(){
+ if(testMode || pollInFlight)return;
+ pollInFlight=true;
+ try{
+   const r=await fetch('/state',{cache:'no-store'});if(!r.ok)throw Error(r.status);
+   const incoming=await r.json();
+   const eventId=Number(incoming.death_event_id||0);
+   // Ignore older event IDs, even if a stale response arrives.
+   if(seenDeathEvent!==null && eventId<seenDeathEvent)return;
+   seenDeathEvent=eventId;
+   target=incoming;
+   lastStateReceived=performance.now();
+ }
+ catch(e){target={active:false,intensity:0,critical:0,glitch_until:0,fatal_remaining:0};}
+ finally{pollInFlight=false;}
+}
+setInterval(poll,50);poll();
+function bump(phase,center,width){let d=Math.abs(phase-center);d=Math.min(d,1-d);return Math.exp(-.5*(d/width)**2);}
+function animate(now){
+ const dt=Math.min(.08,Math.max(0,(now-last)/1000));last=now;
+ // When death is confirmed, clear all red layers immediately.
+ const serverFresh=!!lastStateReceived && now-lastStateReceived<=3000;
+ const serverDissolving=serverFresh && Number(target.death_event_id||0)>0 &&
+   Number(target.dissolve_remaining||0)>0 &&
+   Number(target.dissolve_elapsed||0)<12;
+ // A confirmed death event, not the HP estimate, controls the dissolve.
+ // HP can remain high or become unreliable while the YOU DIED screen is shown.
+ // The server's remaining time, elapsed time, and fresh state still gate it.
+ const dying=!testMode && serverDissolving;
+ const k=1-Math.exp(-dt*(target.active?35:3.2));
+ fade+=((target.active&&!dying?target.intensity:0)-fade)*k;
+ critical+=((target.active&&!dying?target.critical:0)-critical)*k;
+ // Heartbeat is exclusively for critical HP (<40%), not the instant hit flash.
+ // A stronger two-beat red vignette stays transparent in the center.
+ const criticalLevel=Math.max(0,Math.min(1,critical));
+ const beatPhase=(now/1000)*(1.15+criticalLevel*.45)*Math.PI*2;
+ const heartbeat=Math.max(
+   Math.pow(Math.max(0,Math.sin(beatPhase)),10),
+   .68*Math.pow(Math.max(0,Math.sin(beatPhase-0.90)),12)
+ );
+ const heartbeatGain=criticalLevel>0.01 ? Math.min(1,0.65+criticalLevel*2.0) : 0;
+ const pulse=heartbeat*heartbeatGain;
+ pulseValue=pulse;
+ tunnel.style.opacity=dying?'0':Math.min(.44,.10*fade+.15*criticalLevel+.13*pulse).toFixed(3);
+ ring.style.opacity=dying?'0':Math.min(.34,.045*criticalLevel+.28*pulse).toFixed(3);
+ // Separate red edge layer: completely off between beats; visible at 29% HP.
+ beat.style.opacity=dying?'0':(target.active && criticalLevel>0.01 ? Math.min(.96,heartbeat*(.42+.54*heartbeatGain)).toFixed(3) : '0');
+ blood.style.opacity=dying?'0':Math.min(.70,.30*fade+.08*criticalLevel+.32*pulse).toFixed(3);
+ ring.style.transform=`scale(${(1+.025*pulse).toFixed(4)})`;
+ // Server's monotonic clock cannot be compared to browser clock; use server-provided remaining time instead.
+ // The provisional fatal-hit flash lasts about a second; it does not save a clip.
+
+ // Short damage flash driven by the first observed HP drop.
+ const hitLeft=Number(target.hit_remaining||0);
+ // Hit onset: show a clearly visible red flash as soon as the existing
+ // three-sample Python trigger reports hit_remaining. Do not change detection.
+ // The first 180ms stay bright, then decay during the existing 600ms window.
+ const hitAge=Math.max(0,0.60-hitLeft);
+ const hitOpacity=hitLeft<=0?0:(hitAge<0.18?0.58:0.58*Math.max(0,(0.60-hitAge)/0.42));
+ hit.style.opacity=dying?'0':hitOpacity.toFixed(3);
+ // Live: use ONLY the server-computed opacity. The browser does not
+ // generate or extend death animations. The isolated ?test=dissolve mode
+ // keeps its preview animation without affecting live gameplay.
+ const t=testMode?(now-testStarted)/1000:Number(target.dissolve_elapsed||0);
+ let opacity=0;
+ if(testMode){
+   const x=Math.max(0,Math.min(1,(t-0.35)/1.25));
+   opacity=x*x*(3-2*x);
+   if(t>9)opacity*=Math.max(0,1-(t-9)/1.5);
+ }else if(dying){
+   opacity=Number(target.dissolve_opacity||0);
+ }
+ if(!Number.isFinite(opacity))opacity=0;
+ dissolve.style.opacity=String(Math.max(0,Math.min(1,opacity)));
+ if(!testMode)sendOverlayDiag(now,opacity,t,dying);
+ if(debugMode && now-lastDebug>250){
+   lastDebug=now;
+   debug.textContent=`black opacity=${opacity.toFixed(2)} | event=${seenDeathEvent} | local=${t.toFixed(1)} | elapsed=${Number(target.dissolve_elapsed||0).toFixed(1)} | release=${Number(target.dissolve_release_elapsed||0).toFixed(1)} | active=${Boolean(target.active)}`;
+ }
+ // Heartbeat and hit visuals are unchanged; live black fade is server-controlled.
+ requestAnimationFrame(animate);
+}
+requestAnimationFrame(animate);
+</script></body></html>
