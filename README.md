@@ -1,4 +1,4 @@
-# GameEffx — Dark Souls Remastered OBS Effects (V36.17)
+# GameEffx2OBS — Dark Souls Remastered OBS Effects (V36.17)
 
 Windows-based, local Python + OBS overlay that reacts to **Dark Souls Remastered** gameplay. It reads the visible game window using DXcam, detects HP changes, drives an OBS Color Correction filter for damage effects, animates a critical-health heartbeat vignette, detects the **YOU DIED** screen, transitions to black, and requests an OBS Replay Buffer save after a delay.
 
