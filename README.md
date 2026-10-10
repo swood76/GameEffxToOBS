@@ -8,7 +8,7 @@ Windows-based, local Python + OBS overlay that reacts to **Dark Souls Remastered
 
 1. Install **OBS Studio** and **Python 3.11+ (64-bit)** on Windows. During Python installation, enable **Add Python to PATH**.
 2. Install and launch **Dark Souls Remastered**.
-3. In OBS, open **Tools → WebSocket Server Settings**. Enable the WebSocket server, set port **4455**, enable authentication, and set a password. The Python file currently defaults to `gameeffx`; **change `PASSWORD` near the top of `gameeffx_v36_11.py` to match your OBS password before running**. Do not publish a personal password in a public repository.
+3. In OBS, open **Tools → WebSocket Server Settings**. Enable the WebSocket server, set port **4455**, enable authentication, and set a password. The Python file currently defaults to `gameeffx`; **change `PASSWORD` near the top of `gameeffx2OBS_v36_11.py` to match your OBS password before running**. Do not publish a personal password in a public repository.
 4. Use a game/client resolution of **1920×1080** for the initial setup. Make sure the game window is visible and not covered by OBS or another window while playing: DXcam captures pixels from the monitor.
 
 ## 2. Get the project
@@ -71,7 +71,7 @@ Create these **two scenes** in OBS:
 3. In PowerShell in the project folder, run:
 
 ```powershell
-.\.venv\Scripts\python.exe gameeffx_v36_11.py
+.\.venv\Scripts\python.exe gameeffx2OBS_v36_11.py
 ```
 
 4. Confirm the console starts without an exception and shows the local overlay address.
@@ -82,7 +82,7 @@ Create these **two scenes** in OBS:
 
 ## 7. Settings you may need to change
 
-At the top of `gameeffx_v36_11.py`:
+At the top of `gameeffx2OBS_v36_11.py`:
 
 | Setting | Default | Meaning |
 |---|---|---|
@@ -95,7 +95,7 @@ At the top of `gameeffx_v36_11.py`:
 | `OVERLAY_PORT` | `8765` | Local browser overlay HTTP port |
 | `DEATH_TEMPLATE` | `you_died_template_v14.png` | Death-text detection template, supplied in repo |
 
-**Do not rename** `gameeffx_v36_11.py` or `gameeffx_overlay_v35.html` casually: these are the filenames the working V36.17 code uses.
+**Do not rename** `gameeffx2OBS_v36_11.py` or `gameeffx2OBS_overlay_v35.html` casually: these are the filenames the working V36.17 code uses.
 
 ## Troubleshooting
 
